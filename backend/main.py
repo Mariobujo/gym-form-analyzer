@@ -28,6 +28,8 @@ origins = [
     "http://localhost:3000",  # React development server
     "http://127.0.0.1:3000",
     "http://localhost:8080",  # Alternativa
+    "http://localhost:5173",  # ← AÑADE ESTA LÍNEA (puerto de Vite)
+    "http://127.0.0.1:5173",  # ← Y ESTA TAMBIÉN
 ]
 
 app.add_middleware(

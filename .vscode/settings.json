@@ -1,0 +1,22 @@
+{
+  "python.defaultInterpreterPath": "./backend/venv/Scripts/python.exe",
+  "python.terminal.activateEnvironment": true,
+  "python.analysis.extraPaths": ["./backend"],
+  "typescript.validate.enable": false,
+  "javascript.validate.enable": true,
+  "css.validate": false,
+  "less.validate": false,
+  "scss.validate": false,
+  "files.associations": {
+    "*.css": "css"
+  },
+  "emmet.includeLanguages": {
+    "javascript": "javascriptreact"
+  },
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/tsconfig.json": true
+  }
+}
