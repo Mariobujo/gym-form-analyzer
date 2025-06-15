@@ -1,14 +1,19 @@
-# FastAPI y servidor - BÁSICO PARA EMPEZAR
+# FastAPI y servidor
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 
 # Variables de entorno
 python-dotenv==1.0.1
 
-# Base de datos (añadiremos después)
-# sqlalchemy==2.0.25
-# mysql-connector-python==8.3.0
+# Base de datos
+mysql-connector-python==8.3.0
 
-# Autenticación (añadiremos después cuando sea necesario)
-# python-jose==3.3.0
-# passlib[bcrypt]==1.7.4
+# Autenticación (para futuro)
+python-jose==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Validación de datos
+pydantic==2.5.3
+
+# Utilidades
+python-multipart==0.0.6

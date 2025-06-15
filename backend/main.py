@@ -1,6 +1,6 @@
 """
-GymForm Analyzer - Backend Principal
-FastAPI server con MySQL directo (sin SQLAlchemy por ahora)
+GymForm Analyzer - Backend Principal Actualizado
+FastAPI server con endpoints de workout
 """
 
 from fastapi import FastAPI
@@ -11,6 +11,9 @@ import os
 import mysql.connector
 from dotenv import load_dotenv
 
+# Importar rutas
+from src.api.workout_routes import router as workout_router
+
 # Cargar variables de entorno
 load_dotenv()
 
@@ -19,17 +22,17 @@ app = FastAPI(
     title=os.getenv("APP_NAME", "GymForm Analyzer"),
     version=os.getenv("APP_VERSION", "1.0.0"),
     description="API para análisis y corrección de técnica en ejercicios de gimnasio",
-    docs_url="/docs",  # Swagger UI
-    redoc_url="/redoc"  # ReDoc
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 # Configurar CORS
 origins = [
-    "http://localhost:3000",  # React development server
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:8080",  # Alternativa
-    "http://localhost:5173",  # ← AÑADE ESTA LÍNEA (puerto de Vite)
-    "http://127.0.0.1:5173",  # ← Y ESTA TAMBIÉN
+    "http://localhost:8080",
+    "http://localhost:5173",  # Vite
+    "http://127.0.0.1:5173",
 ]
 
 app.add_middleware(
@@ -39,6 +42,12 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
+
+# =====================================
+# INCLUIR ROUTERS
+# =====================================
+
+app.include_router(workout_router)
 
 # =====================================
 # FUNCIONES DE BASE DE DATOS
@@ -82,7 +91,6 @@ def test_mysql_connection():
 def create_database_if_not_exists():
     """Crear base de datos si no existe"""
     try:
-        # Conectar sin especificar base de datos
         config = {
             'host': os.getenv("DB_HOST", "localhost"),
             'port': int(os.getenv("DB_PORT", "3306")),
@@ -96,10 +104,8 @@ def create_database_if_not_exists():
         
         db_name = os.getenv("DB_NAME", "gymform_analyzer")
         
-        # Verificar si existe
         cursor.execute(f"SHOW DATABASES LIKE '{db_name}'")
         if not cursor.fetchone():
-            # Crear base de datos
             cursor.execute(f"CREATE DATABASE {db_name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
             print(f"✅ Base de datos '{db_name}' creada!")
         else:
@@ -137,7 +143,13 @@ async def root():
         "message": "¡Bienvenido a GymForm Analyzer API!",
         "version": os.getenv("APP_VERSION", "1.0.0"),
         "status": "running",
-        "docs": "/docs"
+        "docs": "/docs",
+        "features": [
+            "Análisis de pose en tiempo real",
+            "Guardado de sesiones de entrenamiento",
+            "Estadísticas de progreso",
+            "Feedback automático"
+        ]
     }
 
 @app.get("/health")
@@ -147,7 +159,12 @@ async def health_check():
         "status": "healthy",
         "service": "gymform-analyzer-backend",
         "environment": os.getenv("ENVIRONMENT", "development"),
-        "database_connected": test_mysql_connection()
+        "database_connected": test_mysql_connection(),
+        "features_enabled": {
+            "pose_analysis": True,
+            "workout_tracking": True,
+            "real_time_feedback": True
+        }
     }
 
 @app.get("/api/test")
@@ -155,11 +172,14 @@ async def test_endpoint():
     """Endpoint de prueba para el frontend"""
     return {
         "message": "Conexión exitosa con el backend",
+        "timestamp": "2025-01-15T10:00:00Z",
         "data": {
             "server": "FastAPI",
             "database": "MySQL",
-            "ai_ready": False,  # Cambiaremos a True cuando integremos la IA
-            "database_connected": test_mysql_connection()
+            "ai_ready": True,  # Ahora sí está listo para IA
+            "database_connected": test_mysql_connection(),
+            "pose_detection": "MediaPipe integrado",
+            "workout_tracking": "Habilitado"
         }
     }
 
@@ -170,8 +190,18 @@ async def test_database_connection():
         connection = get_mysql_connection()
         if connection:
             cursor = connection.cursor()
+            
+            # Test básico
             cursor.execute("SELECT VERSION()")
             version = cursor.fetchone()
+            
+            # Test de tablas principales
+            cursor.execute("SHOW TABLES LIKE 'workout_sessions'")
+            sessions_table = cursor.fetchone()
+            
+            cursor.execute("SHOW TABLES LIKE 'exercise_performances'")
+            performances_table = cursor.fetchone()
+            
             cursor.close()
             connection.close()
             
@@ -179,7 +209,11 @@ async def test_database_connection():
                 "status": "success",
                 "message": "Conexión a MySQL exitosa",
                 "database": os.getenv("DB_NAME", "gymform_analyzer"),
-                "mysql_version": version[0] if version else "unknown"
+                "mysql_version": version[0] if version else "unknown",
+                "tables_ready": {
+                    "workout_sessions": sessions_table is not None,
+                    "exercise_performances": performances_table is not None
+                }
             }
         else:
             return {
@@ -193,6 +227,42 @@ async def test_database_connection():
             "message": f"Error conectando a MySQL: {str(e)}",
             "database": os.getenv("DB_NAME", "gymform_analyzer")
         }
+
+# =====================================
+# ENDPOINTS DE INFORMACIÓN
+# =====================================
+
+@app.get("/api/exercises/types")
+async def get_exercise_types():
+    """Obtener tipos de ejercicios disponibles"""
+    connection = None
+    try:
+        connection = get_mysql_connection()
+        if not connection:
+            raise Exception("No se pudo conectar a la base de datos")
+            
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM exercise_types WHERE is_active = TRUE ORDER BY name")
+        exercises = cursor.fetchall()
+        
+        cursor.close()
+        connection.close()
+        
+        return {
+            "status": "success",
+            "exercises": exercises,
+            "total": len(exercises)
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error obteniendo ejercicios: {str(e)}",
+            "exercises": []
+        }
+    finally:
+        if connection:
+            connection.close()
 
 # =====================================
 # MANEJO DE ERRORES
@@ -224,7 +294,6 @@ async def internal_error_handler(request, exc):
 # =====================================
 
 if __name__ == "__main__":
-    # Configuración del servidor
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", 8000))
     debug = os.getenv("DEBUG", "True").lower() == "true"
@@ -233,11 +302,15 @@ if __name__ == "__main__":
     print(f"📍 Servidor: http://{host}:{port}")
     print(f"📚 Documentación: http://{host}:{port}/docs")
     print(f"🔧 Modo debug: {debug}")
+    print(f"🏋️ Funciones habilitadas:")
+    print(f"   ✅ Análisis de pose en tiempo real")
+    print(f"   ✅ Tracking de entrenamientos")
+    print(f"   ✅ Estadísticas de progreso")
     
     uvicorn.run(
         "main:app",
         host=host,
         port=port,
-        reload=debug,  # Auto-reload en desarrollo
+        reload=debug,
         log_level="info"
     )
