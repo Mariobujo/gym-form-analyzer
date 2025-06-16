@@ -6,7 +6,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Camera, Play, Pause, RefreshCw, Target, Activity } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { usePoseDetector } from '../../hooks/usePoseDetector';
+import { usePoseDetector } from '../..          v                                                                                                                                                                                                                                                                                                                              /hooks/usePoseDetector';
 
 const EnhancedAutoCamera = ({ onSessionData, exerciseType = 'general' }) => {
   // Estados de cámara
