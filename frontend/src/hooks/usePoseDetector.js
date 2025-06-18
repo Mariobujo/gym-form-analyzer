@@ -1,12 +1,10 @@
 /**
- * GymForm Analyzer - usePoseDetector Hook
- * Hook personalizado para detección de pose con MediaPipe
+ * GymForm Analyzer - usePoseDetector Hook ROBUSTO
+ * Versión compatible que maneja errores de MediaPipe
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Pose } from '@mediapipe/pose';
-// Eliminamos las importaciones que no se usan por ahora
-// import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
 
 export const usePoseDetector = (options = {}) => {
   // Estados
@@ -21,13 +19,14 @@ export const usePoseDetector = (options = {}) => {
     onResults: null,
     onError: null
   });
+  const initAttemptRef = useRef(0);
 
   // Configuración por defecto
   const config = {
     modelComplexity: options.modelComplexity || 1,
     smoothLandmarks: options.smoothLandmarks !== false,
-    enableSegmentation: options.enableSegmentation || false,
-    smoothSegmentation: options.smoothSegmentation || true,
+    enableSegmentation: false, // DESHABILITADO para evitar errores
+    smoothSegmentation: false,
     minDetectionConfidence: options.minDetectionConfidence || 0.5,
     minTrackingConfidence: options.minTrackingConfidence || 0.5,
     ...options
@@ -50,62 +49,144 @@ export const usePoseDetector = (options = {}) => {
     RIGHT_ANKLE: 28,
   };
 
-  // Conexiones para el esqueleto
-  const POSE_CONNECTIONS = [
-    [11, 12], // hombros
-    [11, 13], [13, 15], // brazo izquierdo
-    [12, 14], [14, 16], // brazo derecho
-    [11, 23], [12, 24], // torso
-    [23, 24], // caderas
-    [23, 25], [25, 27], // pierna izquierda
-    [24, 26], [26, 28], // pierna derecha
-  ];
-
   // =====================================
-  // INICIALIZACIÓN
+  // INICIALIZACIÓN ROBUSTA
   // =====================================
 
   const initializePose = useCallback(async () => {
+    initAttemptRef.current += 1;
+    const currentAttempt = initAttemptRef.current;
+    
     try {
       setIsLoading(true);
       setError(null);
       
-      console.log('🤖 Inicializando detector de pose MediaPipe...');
+      console.log(`🤖 Intento ${currentAttempt}: Inicializando detector de pose MediaPipe...`);
 
-      // Crear instancia de Pose
+      // Limpiar instancia anterior si existe
+      if (poseRef.current) {
+        try {
+          poseRef.current.close();
+        } catch (e) {
+          console.warn('Error cerrando instancia anterior:', e);
+        }
+        poseRef.current = null;
+      }
+
+      // SOLUCIÓN: Usar CDN estable que funciona
       const pose = new Pose({
         locateFile: (file) => {
           console.log('📦 Descargando:', file);
-          return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+          // CDN que funciona sin errores de Module.arguments
+          return `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.3.1621277220/${file}`;
         }
       });
 
-      // Configurar opciones
-      pose.setOptions(config);
-      console.log('⚙️ Configuración aplicada:', config);
+      // Configurar opciones con retry
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Timeout configurando opciones'));
+        }, 10000);
 
-      // Configurar callback de resultados
-      pose.onResults((results) => {
-        handlePoseResults(results);
+        try {
+          pose.setOptions({
+            ...config,
+            // CRÍTICO: Deshabilitar segmentation para evitar errores
+            enableSegmentation: false,
+            smoothSegmentation: false
+          });
+          clearTimeout(timeout);
+          resolve();
+        } catch (err) {
+          clearTimeout(timeout);
+          reject(err);
+        }
       });
 
-      poseRef.current = pose;
-      setIsInitialized(true);
-      console.log('✅ Detector de pose inicializado correctamente');
+      console.log('⚙️ Configuración aplicada:', config);
+
+      // Configurar callback de resultados con manejo robusto de errores
+      pose.onResults((results) => {
+        try {
+          handlePoseResults(results);
+        } catch (err) {
+          console.error('❌ Error en callback de resultados:', err);
+          // No fallar todo el sistema por un error de callback
+        }
+      });
+
+      // ✅ Verificar que el modelo esté funcionando con imagen de prueba
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Timeout verificando modelo'));
+        }, 15000);
+
+        // Crear imagen de prueba más pequeña
+        const testCanvas = document.createElement('canvas');
+        testCanvas.width = 320;
+        testCanvas.height = 240;
+        const ctx = testCanvas.getContext('2d');
+        
+        // Crear un patrón simple para la prueba
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, 320, 240);
+        ctx.fillStyle = 'white';
+        ctx.fillRect(160, 120, 10, 10); // Punto central
+
+        // Probar el detector
+        pose.send({ image: testCanvas })
+          .then(() => {
+            clearTimeout(timeout);
+            console.log('✅ Modelo verificado correctamente');
+            resolve();
+          })
+          .catch((err) => {
+            clearTimeout(timeout);
+            console.error('❌ Error verificando modelo:', err);
+            reject(new Error(`Error verificando modelo: ${err.message}`));
+          });
+      });
+
+      // Solo asignar si el intento actual es el más reciente
+      if (currentAttempt === initAttemptRef.current) {
+        poseRef.current = pose;
+        setIsInitialized(true);
+        console.log('✅ Detector de pose inicializado correctamente');
+      }
 
     } catch (err) {
-      console.error('❌ Error inicializando pose:', err);
-      setError(err.message);
-      if (callbacksRef.current.onError) {
-        callbacksRef.current.onError(err);
+      console.error(`❌ Error en intento ${currentAttempt}:`, err);
+      
+      // Solo actualizar error si es el intento más reciente
+      if (currentAttempt === initAttemptRef.current) {
+        let errorMessage = err.message;
+        
+        // Mensajes específicos para errores conocidos
+        if (err.message.includes('Module.arguments')) {
+          errorMessage = 'Error de compatibilidad MediaPipe. Recarga la página.';
+        } else if (err.message.includes('fetch')) {
+          errorMessage = 'Error descargando modelo. Verifica tu conexión.';
+        } else if (err.message.includes('timeout')) {
+          errorMessage = 'Timeout inicializando. Intenta recargar.';
+        } else if (err.message.includes('WebAssembly')) {
+          errorMessage = 'Tu navegador no soporta WebAssembly.';
+        }
+        
+        setError(errorMessage);
+        
+        if (callbacksRef.current.onError) {
+          callbacksRef.current.onError(err);
+        }
       }
     } finally {
-      setIsLoading(false);
+      if (currentAttempt === initAttemptRef.current) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
   // =====================================
-  // PROCESAMIENTO DE RESULTADOS
+  // PROCESAMIENTO DE RESULTADOS MEJORADO
   // =====================================
 
   const handlePoseResults = useCallback((results) => {
@@ -118,97 +199,98 @@ export const usePoseDetector = (options = {}) => {
       timestamp: Date.now()
     };
 
-    if (results.poseLandmarks && results.poseLandmarks.length > 0) {
-      processedData.detected = true;
-      processedData.landmarks = results.poseLandmarks;
-      processedData.worldLandmarks = results.poseLandmarks3D;
-      processedData.confidence = calculateConfidence(results.poseLandmarks);
-      processedData.angles = calculateAngles(results.poseLandmarks);
+    try {
+      if (results.poseLandmarks && results.poseLandmarks.length > 0) {
+        processedData.detected = true;
+        processedData.landmarks = results.poseLandmarks;
+        processedData.worldLandmarks = results.poseLandmarks3D;
+        processedData.confidence = calculateConfidence(results.poseLandmarks);
+        processedData.angles = calculateAngles(results.poseLandmarks);
+      }
+    } catch (err) {
+      console.warn('⚠️ Error procesando landmarks:', err);
+      // Continuar con datos básicos sin fallar
     }
 
     setCurrentPose(processedData);
 
     // Llamar callback externo si existe
     if (callbacksRef.current.onResults) {
-      callbacksRef.current.onResults(processedData);
+      try {
+        callbacksRef.current.onResults(processedData);
+      } catch (err) {
+        console.error('❌ Error en callback externo:', err);
+      }
     }
   }, []);
 
   // =====================================
-  // CÁLCULO DE MÉTRICAS
+  // CÁLCULO DE MÉTRICAS (Robusto)
   // =====================================
 
   const calculateConfidence = (landmarks) => {
-    let totalVisibility = 0;
-    let count = 0;
+    try {
+      let totalVisibility = 0;
+      let count = 0;
 
-    landmarks.forEach(landmark => {
-      if (landmark.visibility !== undefined) {
-        totalVisibility += landmark.visibility;
-        count++;
-      }
-    });
+      landmarks.forEach(landmark => {
+        if (landmark.visibility !== undefined && !isNaN(landmark.visibility)) {
+          totalVisibility += landmark.visibility;
+          count++;
+        }
+      });
 
-    return count > 0 ? totalVisibility / count : 0;
+      return count > 0 ? totalVisibility / count : 0;
+    } catch (err) {
+      console.warn('Error calculando confianza:', err);
+      return 0;
+    }
   };
 
   const calculateAngles = (landmarks) => {
     const angles = {};
 
     try {
-      // Ángulos de brazos
-      angles.leftElbow = calculateAngle(
-        landmarks[POSE_LANDMARKS.LEFT_SHOULDER],
-        landmarks[POSE_LANDMARKS.LEFT_ELBOW],
-        landmarks[POSE_LANDMARKS.LEFT_WRIST]
-      );
+      // Verificar que tengamos los landmarks necesarios
+      if (!landmarks || landmarks.length < 33) {
+        return angles;
+      }
 
-      angles.rightElbow = calculateAngle(
-        landmarks[POSE_LANDMARKS.RIGHT_SHOULDER],
-        landmarks[POSE_LANDMARKS.RIGHT_ELBOW],
-        landmarks[POSE_LANDMARKS.RIGHT_WRIST]
-      );
+      // Ángulos de brazos (con verificación de existencia)
+      if (landmarks[POSE_LANDMARKS.LEFT_SHOULDER] && landmarks[POSE_LANDMARKS.LEFT_ELBOW] && landmarks[POSE_LANDMARKS.LEFT_WRIST]) {
+        angles.leftElbow = calculateAngle(
+          landmarks[POSE_LANDMARKS.LEFT_SHOULDER],
+          landmarks[POSE_LANDMARKS.LEFT_ELBOW],
+          landmarks[POSE_LANDMARKS.LEFT_WRIST]
+        );
+      }
+
+      if (landmarks[POSE_LANDMARKS.RIGHT_SHOULDER] && landmarks[POSE_LANDMARKS.RIGHT_ELBOW] && landmarks[POSE_LANDMARKS.RIGHT_WRIST]) {
+        angles.rightElbow = calculateAngle(
+          landmarks[POSE_LANDMARKS.RIGHT_SHOULDER],
+          landmarks[POSE_LANDMARKS.RIGHT_ELBOW],
+          landmarks[POSE_LANDMARKS.RIGHT_WRIST]
+        );
+      }
 
       // Ángulos de piernas
-      angles.leftKnee = calculateAngle(
-        landmarks[POSE_LANDMARKS.LEFT_HIP],
-        landmarks[POSE_LANDMARKS.LEFT_KNEE],
-        landmarks[POSE_LANDMARKS.LEFT_ANKLE]
-      );
+      if (landmarks[POSE_LANDMARKS.LEFT_HIP] && landmarks[POSE_LANDMARKS.LEFT_KNEE] && landmarks[POSE_LANDMARKS.LEFT_ANKLE]) {
+        angles.leftKnee = calculateAngle(
+          landmarks[POSE_LANDMARKS.LEFT_HIP],
+          landmarks[POSE_LANDMARKS.LEFT_KNEE],
+          landmarks[POSE_LANDMARKS.LEFT_ANKLE]
+        );
+      }
 
-      angles.rightKnee = calculateAngle(
-        landmarks[POSE_LANDMARKS.RIGHT_HIP],
-        landmarks[POSE_LANDMARKS.RIGHT_KNEE],
-        landmarks[POSE_LANDMARKS.RIGHT_ANKLE]
-      );
+      if (landmarks[POSE_LANDMARKS.RIGHT_HIP] && landmarks[POSE_LANDMARKS.RIGHT_KNEE] && landmarks[POSE_LANDMARKS.RIGHT_ANKLE]) {
+        angles.rightKnee = calculateAngle(
+          landmarks[POSE_LANDMARKS.RIGHT_HIP],
+          landmarks[POSE_LANDMARKS.RIGHT_KNEE],
+          landmarks[POSE_LANDMARKS.RIGHT_ANKLE]
+        );
+      }
 
-      // Ángulos de hombros
-      angles.leftShoulder = calculateAngle(
-        landmarks[POSE_LANDMARKS.LEFT_ELBOW],
-        landmarks[POSE_LANDMARKS.LEFT_SHOULDER],
-        landmarks[POSE_LANDMARKS.LEFT_HIP]
-      );
-
-      angles.rightShoulder = calculateAngle(
-        landmarks[POSE_LANDMARKS.RIGHT_ELBOW],
-        landmarks[POSE_LANDMARKS.RIGHT_SHOULDER],
-        landmarks[POSE_LANDMARKS.RIGHT_HIP]
-      );
-
-      // Ángulos de caderas
-      angles.leftHip = calculateAngle(
-        landmarks[POSE_LANDMARKS.LEFT_KNEE],
-        landmarks[POSE_LANDMARKS.LEFT_HIP],
-        landmarks[POSE_LANDMARKS.LEFT_SHOULDER]
-      );
-
-      angles.rightHip = calculateAngle(
-        landmarks[POSE_LANDMARKS.RIGHT_KNEE],
-        landmarks[POSE_LANDMARKS.RIGHT_HIP],
-        landmarks[POSE_LANDMARKS.RIGHT_SHOULDER]
-      );
-
-      // Ángulo de la columna
+      // Ángulo de la columna (simplificado)
       angles.spine = calculateSpineAngle(landmarks);
 
     } catch (error) {
@@ -219,54 +301,69 @@ export const usePoseDetector = (options = {}) => {
   };
 
   const calculateAngle = (point1, point2, point3) => {
-    if (!point1 || !point2 || !point3) return null;
+    try {
+      if (!point1 || !point2 || !point3) return null;
+      if (isNaN(point1.x) || isNaN(point1.y) || isNaN(point2.x) || isNaN(point2.y) || isNaN(point3.x) || isNaN(point3.y)) return null;
 
-    const radians = Math.atan2(point3.y - point2.y, point3.x - point2.x) -
-                   Math.atan2(point1.y - point2.y, point1.x - point2.x);
-    
-    let angle = Math.abs(radians * 180.0 / Math.PI);
-    
-    if (angle > 180.0) {
-      angle = 360 - angle;
+      const radians = Math.atan2(point3.y - point2.y, point3.x - point2.x) -
+                     Math.atan2(point1.y - point2.y, point1.x - point2.x);
+      
+      let angle = Math.abs(radians * 180.0 / Math.PI);
+      
+      if (angle > 180.0) {
+        angle = 360 - angle;
+      }
+      
+      return Math.round(angle);
+    } catch (err) {
+      console.warn('Error calculando ángulo:', err);
+      return null;
     }
-    
-    return Math.round(angle);
   };
 
   const calculateSpineAngle = (landmarks) => {
-    const leftShoulder = landmarks[POSE_LANDMARKS.LEFT_SHOULDER];
-    const rightShoulder = landmarks[POSE_LANDMARKS.RIGHT_SHOULDER];
-    const leftHip = landmarks[POSE_LANDMARKS.LEFT_HIP];
-    const rightHip = landmarks[POSE_LANDMARKS.RIGHT_HIP];
+    try {
+      const leftShoulder = landmarks[POSE_LANDMARKS.LEFT_SHOULDER];
+      const rightShoulder = landmarks[POSE_LANDMARKS.RIGHT_SHOULDER];
+      const leftHip = landmarks[POSE_LANDMARKS.LEFT_HIP];
+      const rightHip = landmarks[POSE_LANDMARKS.RIGHT_HIP];
 
-    if (!leftShoulder || !rightShoulder || !leftHip || !rightHip) return null;
+      if (!leftShoulder || !rightShoulder || !leftHip || !rightHip) return null;
 
-    // Calcular punto medio de hombros y caderas
-    const shoulderMid = {
-      x: (leftShoulder.x + rightShoulder.x) / 2,
-      y: (leftShoulder.y + rightShoulder.y) / 2
-    };
-    
-    const hipMid = {
-      x: (leftHip.x + rightHip.x) / 2,
-      y: (leftHip.y + rightHip.y) / 2
-    };
+      // Calcular punto medio de hombros y caderas
+      const shoulderMid = {
+        x: (leftShoulder.x + rightShoulder.x) / 2,
+        y: (leftShoulder.y + rightShoulder.y) / 2
+      };
+      
+      const hipMid = {
+        x: (leftHip.x + rightHip.x) / 2,
+        y: (leftHip.y + rightHip.y) / 2
+      };
 
-    // Calcular ángulo de inclinación
-    const deltaY = shoulderMid.y - hipMid.y;
-    const deltaX = shoulderMid.x - hipMid.x;
-    
-    const angle = Math.atan2(deltaX, deltaY) * 180 / Math.PI;
-    return Math.round(Math.abs(angle));
+      // Calcular ángulo de inclinación
+      const deltaY = shoulderMid.y - hipMid.y;
+      const deltaX = shoulderMid.x - hipMid.x;
+      
+      const angle = Math.atan2(deltaX, deltaY) * 180 / Math.PI;
+      return Math.round(Math.abs(angle));
+    } catch (err) {
+      console.warn('Error calculando ángulo de columna:', err);
+      return null;
+    }
   };
 
   // =====================================
-  // FUNCIONES PÚBLICAS
+  // FUNCIONES PÚBLICAS ROBUSTAS
   // =====================================
 
   const processFrame = useCallback(async (videoElement) => {
     if (!isInitialized || !poseRef.current) {
-      console.warn('⚠️ Detector no inicializado');
+      return false;
+    }
+
+    // Verificar que el video esté listo
+    if (!videoElement || videoElement.readyState < 2) {
       return false;
     }
 
@@ -275,12 +372,22 @@ export const usePoseDetector = (options = {}) => {
       return true;
     } catch (error) {
       console.error('❌ Error procesando frame:', error);
+      
+      // Si hay error de Module.arguments, intentar reinicializar
+      if (error.message.includes('Module.arguments')) {
+        console.log('🔄 Detectado error Module.arguments, reinicializando...');
+        setIsInitialized(false);
+        setTimeout(() => {
+          initializePose();
+        }, 1000);
+      }
+      
       if (callbacksRef.current.onError) {
         callbacksRef.current.onError(error);
       }
       return false;
     }
-  }, [isInitialized]);
+  }, [isInitialized, initializePose]);
 
   const setCallbacks = useCallback((callbacks) => {
     callbacksRef.current = { ...callbacksRef.current, ...callbacks };
@@ -289,80 +396,54 @@ export const usePoseDetector = (options = {}) => {
   const drawPose = useCallback((ctx, landmarks, canvasWidth, canvasHeight) => {
     if (!landmarks || landmarks.length === 0) return;
 
-    // Convertir coordenadas normalizadas a píxeles
-    const scaledLandmarks = landmarks.map(landmark => ({
-      x: landmark.x * canvasWidth,
-      y: landmark.y * canvasHeight,
-      visibility: landmark.visibility
-    }));
-
-    // Dibujar conexiones del esqueleto con grosor variable
-    POSE_CONNECTIONS.forEach(([startIdx, endIdx]) => {
-      const start = scaledLandmarks[startIdx];
-      const end = scaledLandmarks[endIdx];
+    try {
+      // Dibujar puntos principales más robustamente
+      const keyLandmarks = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]; // Puntos principales
       
-      if (start && end && start.visibility > 0.5 && end.visibility > 0.5) {
-        ctx.beginPath();
-        ctx.moveTo(start.x, start.y);
-        ctx.lineTo(end.x, end.y);
-        
-        // Color del esqueleto más brillante
-        ctx.strokeStyle = '#00FF41';
-        ctx.lineWidth = 5;
-        ctx.lineCap = 'round';
-        
-        // Sombra para mejor visibilidad
-        ctx.shadowColor = '#000000';
-        ctx.shadowBlur = 3;
-        ctx.shadowOffsetX = 1;
-        ctx.shadowOffsetY = 1;
-        
-        ctx.stroke();
-        
-        // Resetear sombra
-        ctx.shadowBlur = 0;
-      }
-    });
+      keyLandmarks.forEach((index) => {
+        const landmark = landmarks[index];
+        if (landmark && landmark.visibility > 0.5 && !isNaN(landmark.x) && !isNaN(landmark.y)) {
+          const x = landmark.x * canvasWidth;
+          const y = landmark.y * canvasHeight;
+          
+          ctx.beginPath();
+          ctx.arc(x, y, 8, 0, 2 * Math.PI);
+          ctx.fillStyle = '#00FF41';
+          ctx.fill();
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      });
 
-    // Dibujar puntos clave más grandes y visibles
-    scaledLandmarks.forEach((landmark, index) => {
-      if (landmark.visibility > 0.5) {
-        ctx.beginPath();
-        ctx.arc(landmark.x, landmark.y, 10, 0, 2 * Math.PI);
+      // Dibujar algunas conexiones básicas
+      const connections = [
+        [11, 12], // hombros
+        [11, 23], [12, 24], // torso
+        [23, 24], // caderas
+        [25, 27], [26, 28] // piernas
+      ];
+
+      connections.forEach(([startIdx, endIdx]) => {
+        const start = landmarks[startIdx];
+        const end = landmarks[endIdx];
         
-        // Color del punto
-        ctx.fillStyle = getPointColor(index);
-        ctx.fill();
-        
-        // Borde blanco para contraste
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        
-        // Sombra para los puntos
-        ctx.shadowColor = '#000000';
-        ctx.shadowBlur = 3;
-        ctx.beginPath();
-        ctx.arc(landmark.x, landmark.y, 8, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      }
-    });
+        if (start && end && start.visibility > 0.5 && end.visibility > 0.5) {
+          ctx.beginPath();
+          ctx.moveTo(start.x * canvasWidth, start.y * canvasHeight);
+          ctx.lineTo(end.x * canvasWidth, end.y * canvasHeight);
+          ctx.strokeStyle = '#00FF41';
+          ctx.lineWidth = 4;
+          ctx.stroke();
+        }
+      });
+    } catch (err) {
+      console.warn('Error dibujando pose:', err);
+    }
   }, []);
 
-  const getPointColor = (index) => {
-    // Colores más vibrantes y diferenciados para mejor visibilidad
-    if (index === 0) return '#FF1744'; // Nariz - rojo brillante
-    if ([11, 12].includes(index)) return '#00E676'; // Hombros - verde brillante
-    if ([13, 14, 15, 16].includes(index)) return '#2196F3'; // Brazos - azul brillante
-    if ([23, 24].includes(index)) return '#FF9800'; // Caderas - naranja brillante
-    if ([25, 26, 27, 28].includes(index)) return '#9C27B0'; // Piernas - morado brillante
-    if ([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(index)) return '#FFEB3B'; // Cara - amarillo
-    return '#E0E0E0'; // Otros - gris claro
-  };
-
   // =====================================
-  // EFECTOS
+  // EFECTOS CON REINTENTOS
   // =====================================
 
   useEffect(() => {
@@ -371,12 +452,28 @@ export const usePoseDetector = (options = {}) => {
     return () => {
       if (poseRef.current) {
         console.log('🧹 Limpiando detector de pose...');
-        poseRef.current.close();
+        try {
+          poseRef.current.close();
+        } catch (err) {
+          console.warn('⚠️ Error cerrando detector:', err);
+        }
         poseRef.current = null;
       }
       setIsInitialized(false);
     };
   }, [initializePose]);
+
+  // Auto-reintentar si hay error de Module.arguments
+  useEffect(() => {
+    if (error && error.includes('Module.arguments') && initAttemptRef.current < 3) {
+      console.log('🔄 Auto-reintentando debido a error Module.arguments...');
+      const timer = setTimeout(() => {
+        initializePose();
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [error, initializePose]);
 
   // =====================================
   // RETURN
@@ -401,6 +498,9 @@ export const usePoseDetector = (options = {}) => {
     detected: currentPose?.detected || false,
     
     // Referencias útiles
-    POSE_LANDMARKS
+    POSE_LANDMARKS,
+    
+    // Función para reinicializar manualmente
+    reinitialize: initializePose
   };
 };
