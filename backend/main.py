@@ -1,27 +1,25 @@
 """
-GymForm Analyzer - Backend Principal Actualizado
-FastAPI server con endpoints de workout
+GymForm Analyzer - Backend Principal con Autenticación
 """
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
 import os
-import mysql.connector
 from dotenv import load_dotenv
 
 # Importar rutas
 from src.api.workout_routes import router as workout_router
+from src.api.auth_routes import router as auth_router  # NUEVO
 
 # Cargar variables de entorno
 load_dotenv()
 
 # Crear instancia de FastAPI
 app = FastAPI(
-    title=os.getenv("APP_NAME", "GymForm Analyzer"),
-    version=os.getenv("APP_VERSION", "1.0.0"),
-    description="API para análisis y corrección de técnica en ejercicios de gimnasio",
+    title="GymForm Analyzer API",
+    version="2.0.0",
+    description="API completa para análisis de técnica en ejercicios con autenticación",
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -31,7 +29,7 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:8080",
-    "http://localhost:5173",  # Vite
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
 
@@ -48,6 +46,7 @@ app.add_middleware(
 # =====================================
 
 app.include_router(workout_router)
+app.include_router(auth_router)
 
 # =====================================
 # FUNCIONES DE BASE DE DATOS
@@ -138,17 +137,17 @@ async def startup_event():
 
 @app.get("/")
 async def root():
-    """Endpoint de bienvenida"""
     return {
-        "message": "¡Bienvenido a GymForm Analyzer API!",
-        "version": os.getenv("APP_VERSION", "1.0.0"),
+        "message": "¡GymForm Analyzer API v2.0 - Con Autenticación!",
+        "version": "2.0.0",
         "status": "running",
         "docs": "/docs",
         "features": [
-            "Análisis de pose en tiempo real",
-            "Guardado de sesiones de entrenamiento",
-            "Estadísticas de progreso",
-            "Feedback automático"
+            "✅ Autenticación JWT",
+            "✅ Registro de usuarios",
+            "✅ Análisis de pose con IA",
+            "✅ Persistencia en MySQL",
+            "✅ Estadísticas avanzadas"
         ]
     }
 
