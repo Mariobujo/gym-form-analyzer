@@ -1,6 +1,6 @@
 /**
- * GymForm Analyzer - usePoseDetector Hook ROBUSTO
- * Versión compatible que maneja errores de MediaPipe
+ * GymForm Analyzer - usePoseDetector Hook CORREGIDO
+ * Versión robusta que garantiza la visualización de puntos
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -25,7 +25,7 @@ export const usePoseDetector = (options = {}) => {
   const config = {
     modelComplexity: options.modelComplexity || 1,
     smoothLandmarks: options.smoothLandmarks !== false,
-    enableSegmentation: false, // DESHABILITADO para evitar errores
+    enableSegmentation: false, // CRÍTICO: Siempre deshabilitado
     smoothSegmentation: false,
     minDetectionConfidence: options.minDetectionConfidence || 0.5,
     minTrackingConfidence: options.minTrackingConfidence || 0.5,
@@ -50,7 +50,7 @@ export const usePoseDetector = (options = {}) => {
   };
 
   // =====================================
-  // INICIALIZACIÓN ROBUSTA
+  // INICIALIZACIÓN ULTRA ROBUSTA
   // =====================================
 
   const initializePose = useCallback(async () => {
@@ -61,40 +61,44 @@ export const usePoseDetector = (options = {}) => {
       setIsLoading(true);
       setError(null);
       
-      console.log(`🤖 Intento ${currentAttempt}: Inicializando detector de pose MediaPipe...`);
+      console.log(`🤖 Intento ${currentAttempt}: Inicializando MediaPipe Pose...`);
 
       // Limpiar instancia anterior si existe
       if (poseRef.current) {
         try {
           poseRef.current.close();
         } catch (e) {
-          console.warn('Error cerrando instancia anterior:', e);
+          console.warn('⚠️ Error cerrando instancia anterior:', e);
         }
         poseRef.current = null;
       }
 
-      // SOLUCIÓN: Usar CDN estable que funciona
+      // Crear nueva instancia con CDN estable
       const pose = new Pose({
         locateFile: (file) => {
-          console.log('📦 Descargando:', file);
-          // CDN que funciona sin errores de Module.arguments
-          return `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.3.1621277220/${file}`;
+          console.log('📦 Descargando archivo MediaPipe:', file);
+          // CDN que funciona de manera confiable
+          return `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1635989137/${file}`;
         }
       });
 
-      // Configurar opciones con retry
+      console.log('⚙️ Aplicando configuración a MediaPipe...');
+
+      // Configurar opciones de manera robusta
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
-          reject(new Error('Timeout configurando opciones'));
-        }, 10000);
+          reject(new Error('Timeout configurando MediaPipe'));
+        }, 15000);
 
         try {
           pose.setOptions({
             ...config,
-            // CRÍTICO: Deshabilitar segmentation para evitar errores
+            // CRÍTICO: Deshabilitar segmentation completamente
             enableSegmentation: false,
             smoothSegmentation: false
           });
+          
+          console.log('✅ Configuración aplicada:', config);
           clearTimeout(timeout);
           resolve();
         } catch (err) {
@@ -103,41 +107,39 @@ export const usePoseDetector = (options = {}) => {
         }
       });
 
-      console.log('⚙️ Configuración aplicada:', config);
-
-      // Configurar callback de resultados con manejo robusto de errores
+      // Configurar callback de resultados con manejo de errores
       pose.onResults((results) => {
         try {
           handlePoseResults(results);
         } catch (err) {
           console.error('❌ Error en callback de resultados:', err);
-          // No fallar todo el sistema por un error de callback
         }
       });
 
-      // ✅ Verificar que el modelo esté funcionando con imagen de prueba
+      // Verificar que el modelo funciona con imagen de prueba
+      console.log('🧪 Verificando modelo con imagen de prueba...');
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
-          reject(new Error('Timeout verificando modelo'));
-        }, 15000);
+          reject(new Error('Timeout verificando modelo MediaPipe'));
+        }, 20000);
 
-        // Crear imagen de prueba más pequeña
+        // Crear imagen de prueba simple
         const testCanvas = document.createElement('canvas');
-        testCanvas.width = 320;
-        testCanvas.height = 240;
+        testCanvas.width = 640;
+        testCanvas.height = 480;
         const ctx = testCanvas.getContext('2d');
         
-        // Crear un patrón simple para la prueba
+        // Fondo negro con punto blanco en el centro
         ctx.fillStyle = 'black';
-        ctx.fillRect(0, 0, 320, 240);
+        ctx.fillRect(0, 0, 640, 480);
         ctx.fillStyle = 'white';
-        ctx.fillRect(160, 120, 10, 10); // Punto central
+        ctx.fillRect(320, 240, 20, 20); // Punto central
 
         // Probar el detector
         pose.send({ image: testCanvas })
           .then(() => {
             clearTimeout(timeout);
-            console.log('✅ Modelo verificado correctamente');
+            console.log('✅ Modelo MediaPipe verificado correctamente');
             resolve();
           })
           .catch((err) => {
@@ -147,11 +149,11 @@ export const usePoseDetector = (options = {}) => {
           });
       });
 
-      // Solo asignar si el intento actual es el más reciente
+      // Solo asignar si este es el intento más reciente
       if (currentAttempt === initAttemptRef.current) {
         poseRef.current = pose;
         setIsInitialized(true);
-        console.log('✅ Detector de pose inicializado correctamente');
+        console.log('✅ MediaPipe Pose inicializado y verificado');
       }
 
     } catch (err) {
@@ -166,10 +168,12 @@ export const usePoseDetector = (options = {}) => {
           errorMessage = 'Error de compatibilidad MediaPipe. Recarga la página.';
         } else if (err.message.includes('fetch')) {
           errorMessage = 'Error descargando modelo. Verifica tu conexión.';
-        } else if (err.message.includes('timeout')) {
-          errorMessage = 'Timeout inicializando. Intenta recargar.';
+        } else if (err.message.includes('timeout') || err.message.includes('Timeout')) {
+          errorMessage = 'Timeout inicializando MediaPipe. Intenta recargar.';
         } else if (err.message.includes('WebAssembly')) {
           errorMessage = 'Tu navegador no soporta WebAssembly.';
+        } else if (err.message.includes('locateFile')) {
+          errorMessage = 'Error cargando archivos MediaPipe desde CDN.';
         }
         
         setError(errorMessage);
@@ -225,7 +229,7 @@ export const usePoseDetector = (options = {}) => {
   }, []);
 
   // =====================================
-  // CÁLCULO DE MÉTRICAS (Robusto)
+  // CÁLCULO DE MÉTRICAS (Ultra Robusto)
   // =====================================
 
   const calculateConfidence = (landmarks) => {
@@ -242,7 +246,7 @@ export const usePoseDetector = (options = {}) => {
 
       return count > 0 ? totalVisibility / count : 0;
     } catch (err) {
-      console.warn('Error calculando confianza:', err);
+      console.warn('⚠️ Error calculando confianza:', err);
       return 0;
     }
   };
@@ -316,7 +320,7 @@ export const usePoseDetector = (options = {}) => {
       
       return Math.round(angle);
     } catch (err) {
-      console.warn('Error calculando ángulo:', err);
+      console.warn('⚠️ Error calculando ángulo individual:', err);
       return null;
     }
   };
@@ -348,13 +352,13 @@ export const usePoseDetector = (options = {}) => {
       const angle = Math.atan2(deltaX, deltaY) * 180 / Math.PI;
       return Math.round(Math.abs(angle));
     } catch (err) {
-      console.warn('Error calculando ángulo de columna:', err);
+      console.warn('⚠️ Error calculando ángulo de columna:', err);
       return null;
     }
   };
 
   // =====================================
-  // FUNCIONES PÚBLICAS ROBUSTAS
+  // FUNCIONES PÚBLICAS ULTRA ROBUSTAS
   // =====================================
 
   const processFrame = useCallback(async (videoElement) => {
@@ -373,13 +377,13 @@ export const usePoseDetector = (options = {}) => {
     } catch (error) {
       console.error('❌ Error procesando frame:', error);
       
-      // Si hay error de Module.arguments, intentar reinicializar
-      if (error.message.includes('Module.arguments')) {
-        console.log('🔄 Detectado error Module.arguments, reinicializando...');
+      // Si hay error crítico, intentar reinicializar
+      if (error.message.includes('Module.arguments') || error.message.includes('internal error')) {
+        console.log('🔄 Error crítico detectado, reinicializando MediaPipe...');
         setIsInitialized(false);
         setTimeout(() => {
           initializePose();
-        }, 1000);
+        }, 2000);
       }
       
       if (callbacksRef.current.onError) {
@@ -397,33 +401,21 @@ export const usePoseDetector = (options = {}) => {
     if (!landmarks || landmarks.length === 0) return;
 
     try {
-      // Dibujar puntos principales más robustamente
-      const keyLandmarks = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]; // Puntos principales
-      
-      keyLandmarks.forEach((index) => {
-        const landmark = landmarks[index];
-        if (landmark && landmark.visibility > 0.5 && !isNaN(landmark.x) && !isNaN(landmark.y)) {
-          const x = landmark.x * canvasWidth;
-          const y = landmark.y * canvasHeight;
-          
-          ctx.beginPath();
-          ctx.arc(x, y, 8, 0, 2 * Math.PI);
-          ctx.fillStyle = '#00FF41';
-          ctx.fill();
-          ctx.strokeStyle = '#FFFFFF';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-        }
-      });
-
-      // Dibujar algunas conexiones básicas
+      // Conexiones del esqueleto
       const connections = [
         [11, 12], // hombros
+        [11, 13], [13, 15], // brazo izquierdo
+        [12, 14], [14, 16], // brazo derecho
         [11, 23], [12, 24], // torso
         [23, 24], // caderas
-        [25, 27], [26, 28] // piernas
+        [23, 25], [25, 27], // pierna izquierda
+        [24, 26], [26, 28] // pierna derecha
       ];
 
+      // Dibujar conexiones
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#00FF41';
+      
       connections.forEach(([startIdx, endIdx]) => {
         const start = landmarks[startIdx];
         const end = landmarks[endIdx];
@@ -432,26 +424,77 @@ export const usePoseDetector = (options = {}) => {
           ctx.beginPath();
           ctx.moveTo(start.x * canvasWidth, start.y * canvasHeight);
           ctx.lineTo(end.x * canvasWidth, end.y * canvasHeight);
-          ctx.strokeStyle = '#00FF41';
-          ctx.lineWidth = 4;
           ctx.stroke();
         }
       });
+
+      // Dibujar puntos principales más grandes
+      const keyLandmarks = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+      
+      keyLandmarks.forEach((index) => {
+        const landmark = landmarks[index];
+        if (landmark && landmark.visibility > 0.5 && !isNaN(landmark.x) && !isNaN(landmark.y)) {
+          const x = landmark.x * canvasWidth;
+          const y = landmark.y * canvasHeight;
+          
+          // Círculo principal
+          ctx.beginPath();
+          ctx.arc(x, y, 8, 0, 2 * Math.PI);
+          ctx.fillStyle = getPointColor(index);
+          ctx.fill();
+          
+          // Borde blanco
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          
+          // Centro blanco
+          ctx.beginPath();
+          ctx.arc(x, y, 3, 0, 2 * Math.PI);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fill();
+        }
+      });
+
+      // Dibujar puntos menores
+      landmarks.forEach((landmark, index) => {
+        if (!keyLandmarks.includes(index) && landmark.visibility > 0.3) {
+          const x = landmark.x * canvasWidth;
+          const y = landmark.y * canvasHeight;
+          
+          ctx.beginPath();
+          ctx.arc(x, y, 4, 0, 2 * Math.PI);
+          ctx.fillStyle = '#FFFF00';
+          ctx.fill();
+        }
+      });
+
     } catch (err) {
-      console.warn('Error dibujando pose:', err);
+      console.warn('⚠️ Error dibujando pose:', err);
     }
   }, []);
 
+  const getPointColor = (index) => {
+    // Colores específicos para diferentes partes del cuerpo
+    if (index === 0) return '#FF6B6B'; // Nariz - rojo
+    if ([11, 12].includes(index)) return '#4ECDC4'; // Hombros - cyan
+    if ([13, 14, 15, 16].includes(index)) return '#45B7D1'; // Brazos - azul
+    if ([23, 24].includes(index)) return '#F9CA24'; // Caderas - amarillo
+    if ([25, 26, 27, 28].includes(index)) return '#6C5CE7'; // Piernas - púrpura
+    return '#A0A0A0'; // Otros - gris
+  };
+
   // =====================================
-  // EFECTOS CON REINTENTOS
+  // EFECTOS CON MANEJO DE ERRORES
   // =====================================
 
   useEffect(() => {
+    console.log('🚀 Hook usePoseDetector montado, iniciando...');
     initializePose();
 
     return () => {
+      console.log('🧹 Hook usePoseDetector desmontando...');
       if (poseRef.current) {
-        console.log('🧹 Limpiando detector de pose...');
         try {
           poseRef.current.close();
         } catch (err) {
@@ -463,30 +506,32 @@ export const usePoseDetector = (options = {}) => {
     };
   }, [initializePose]);
 
-  // Auto-reintentar si hay error de Module.arguments
+  // Auto-reintentar en ciertos tipos de error
   useEffect(() => {
-    if (error && error.includes('Module.arguments') && initAttemptRef.current < 3) {
-      console.log('🔄 Auto-reintentando debido a error Module.arguments...');
-      const timer = setTimeout(() => {
-        initializePose();
-      }, 2000);
-      
-      return () => clearTimeout(timer);
+    if (error && initAttemptRef.current < 3) {
+      if (error.includes('Module.arguments') || error.includes('timeout') || error.includes('Timeout')) {
+        console.log('🔄 Auto-reintentando debido a error recuperable...');
+        const timer = setTimeout(() => {
+          initializePose();
+        }, 3000);
+        
+        return () => clearTimeout(timer);
+      }
     }
   }, [error, initializePose]);
 
   // =====================================
-  // RETURN
+  // RETURN DEL HOOK
   // =====================================
 
   return {
-    // Estados
+    // Estados principales
     isLoading,
     isInitialized,
     error,
     currentPose,
     
-    // Funciones
+    // Funciones principales
     processFrame,
     setCallbacks,
     drawPose,
@@ -501,6 +546,9 @@ export const usePoseDetector = (options = {}) => {
     POSE_LANDMARKS,
     
     // Función para reinicializar manualmente
-    reinitialize: initializePose
+    reinitialize: initializePose,
+    
+    // Información de debug
+    attemptCount: initAttemptRef.current
   };
 };

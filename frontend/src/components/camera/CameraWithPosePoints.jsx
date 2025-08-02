@@ -1,12 +1,11 @@
 /**
- * GymForm Analyzer - Cámara con Puntos de Pose Visibles
- * Versión simplificada para mostrar los puntos de MediaPipe claramente
+ * GymForm Analyzer - Cámara con MediaPipe usando CDN
+ * Versión que funciona sin problemas de dependencias
  */
 
 import { useState, useRef, useEffect } from 'react';
 import { Camera, Play, Pause, RefreshCw, Activity, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Pose } from '@mediapipe/pose';
 
 const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
   // Estados de cámara
@@ -30,6 +29,7 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
   const poseRef = useRef(null);
   const sessionIntervalRef = useRef(null);
   const animationRef = useRef(null);
+  const processingRef = useRef(false);
 
   // Puntos clave de MediaPipe Pose
   const POSE_LANDMARKS = {
@@ -48,7 +48,7 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
     RIGHT_ANKLE: 28,
   };
 
-  // Conexiones para dibujar el esqueleto
+  // Conexiones para esqueleto
   const POSE_CONNECTIONS = [
     [11, 12], // hombros
     [11, 13], [13, 15], // brazo izquierdo
@@ -60,11 +60,12 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
   ];
 
   // =====================================
-  // INICIALIZACIÓN
+  // INICIALIZACIÓN CON CDN
   // =====================================
 
   useEffect(() => {
-    initializeEverything();
+    console.log('🚀 Iniciando sistema con MediaPipe CDN...');
+    loadMediaPipeFromCDN();
     return () => cleanup();
   }, []);
 
@@ -87,26 +88,84 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
   }, [isRecording]);
 
   // =====================================
-  // FUNCIONES DE INICIALIZACIÓN
+  // CARGA DE MEDIAPIPE DESDE CDN
   // =====================================
 
-  const initializeEverything = async () => {
-    console.log('🚀 Iniciando cámara + MediaPipe...');
-    setIsLoading(true);
-    setError(null);
-
+  const loadMediaPipeFromCDN = async () => {
     try {
-      // 1. Inicializar MediaPipe primero
+      setIsLoading(true);
+      setError(null);
+      console.log('📦 Cargando MediaPipe desde CDN...');
+
+      // Verificar si ya está cargado
+      if (window.Pose) {
+        console.log('✅ MediaPipe ya está disponible');
+        await initializeAfterLoad();
+        return;
+      }
+
+      // Cargar scripts desde CDN
+      await Promise.all([
+        loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js'),
+        loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/control_utils@0.6/control_utils.js'),
+        loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js'),
+        loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.js')
+      ]);
+
+      console.log('✅ Scripts de MediaPipe cargados desde CDN');
+      
+      // Esperar un poco para que se inicialicen
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      if (window.Pose) {
+        await initializeAfterLoad();
+      } else {
+        throw new Error('MediaPipe no se cargó correctamente desde CDN');
+      }
+
+    } catch (error) {
+      console.error('❌ Error cargando MediaPipe:', error);
+      setError(error.message);
+      setIsLoading(false);
+    }
+  };
+
+  const loadScript = (src) => {
+    return new Promise((resolve, reject) => {
+      // Verificar si ya existe
+      if (document.querySelector(`script[src="${src}"]`)) {
+        resolve();
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = src;
+      script.crossOrigin = 'anonymous';
+      script.onload = () => {
+        console.log(`✅ Cargado: ${src}`);
+        resolve();
+      };
+      script.onerror = () => {
+        console.error(`❌ Error cargando: ${src}`);
+        reject(new Error(`Error cargando ${src}`));
+      };
+      document.head.appendChild(script);
+    });
+  };
+
+  const initializeAfterLoad = async () => {
+    try {
+      console.log('🎯 Paso 1: Inicializando MediaPipe...');
       await initializePose();
       
-      // 2. Inicializar cámara
+      console.log('🎯 Paso 2: Inicializando cámara...');
       await initializeCamera();
       
-      // 3. Iniciar loop de procesamiento
+      console.log('🎯 Paso 3: Iniciando procesamiento...');
       startProcessingLoop();
       
       setIsLoading(false);
-      toast.success('🤖 Sistema de detección de pose activado!');
+      toast.success('🤖 ¡Sistema MediaPipe completamente funcional!');
       
     } catch (error) {
       console.error('❌ Error en inicialización:', error);
@@ -116,17 +175,27 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
     }
   };
 
+  // =====================================
+  // INICIALIZACIÓN DE POSE
+  // =====================================
+
   const initializePose = async () => {
     return new Promise((resolve, reject) => {
       try {
-        console.log('🤖 Inicializando MediaPipe Pose...');
+        console.log('🤖 Creando instancia MediaPipe Pose...');
         
-        const pose = new Pose({
+        if (!window.Pose) {
+          throw new Error('MediaPipe Pose no está disponible');
+        }
+
+        const pose = new window.Pose({
           locateFile: (file) => {
-            return `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.3.1621277220/${file}`;
+            console.log('📦 Cargando archivo:', file);
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/${file}`;
           }
         });
 
+        // Configuración optimizada
         pose.setOptions({
           modelComplexity: 1,
           smoothLandmarks: true,
@@ -136,17 +205,40 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
           minTrackingConfidence: 0.5
         });
 
+        console.log('⚙️ Configuración aplicada a MediaPipe');
+
+        // Configurar callback
         pose.onResults((results) => {
-          handlePoseResults(results);
+          try {
+            handlePoseResults(results);
+          } catch (err) {
+            console.warn('⚠️ Error en callback:', err);
+          }
         });
 
-        poseRef.current = pose;
-        setPoseInitialized(true);
-        console.log('✅ MediaPipe Pose inicializado');
-        resolve();
+        // Verificar con imagen de prueba
+        console.log('🧪 Verificando MediaPipe...');
+        const testCanvas = document.createElement('canvas');
+        testCanvas.width = 640;
+        testCanvas.height = 480;
+        const ctx = testCanvas.getContext('2d');
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, 640, 480);
+
+        pose.send({ image: testCanvas })
+          .then(() => {
+            console.log('✅ MediaPipe verificado');
+            poseRef.current = pose;
+            setPoseInitialized(true);
+            resolve();
+          })
+          .catch((error) => {
+            console.error('❌ Error verificando:', error);
+            reject(new Error(`Error verificando MediaPipe: ${error.message}`));
+          });
         
       } catch (error) {
-        console.error('❌ Error inicializando MediaPipe:', error);
+        console.error('❌ Error creando MediaPipe:', error);
         reject(error);
       }
     });
@@ -154,13 +246,14 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
 
   const initializeCamera = async () => {
     try {
-      console.log('📹 Iniciando cámara...');
+      console.log('📹 Solicitando acceso a cámara...');
       
       const constraints = {
         video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: 'user'
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 },
+          facingMode: 'user',
+          frameRate: { ideal: 30, min: 15 }
         },
         audio: false
       };
@@ -171,22 +264,37 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           const handleVideoReady = () => {
+            console.log('🎥 Video metadata cargada');
             videoRef.current.play()
               .then(() => {
                 setIsActive(true);
-                console.log('✅ Cámara activa');
+                console.log('✅ Cámara reproduciendo');
                 resolve();
               })
               .catch(reject);
           };
 
-          videoRef.current.addEventListener('loadedmetadata', handleVideoReady);
+          videoRef.current.addEventListener('loadedmetadata', handleVideoReady, { once: true });
+          
+          setTimeout(() => {
+            reject(new Error('Timeout esperando video'));
+          }, 10000);
         });
       }
     } catch (error) {
-      throw new Error(`Error activando cámara: ${error.message}`);
+      let errorMessage = error.message;
+      
+      if (error.name === 'NotAllowedError') {
+        errorMessage = 'Permiso de cámara denegado. Permite el acceso y recarga.';
+      } else if (error.name === 'NotFoundError') {
+        errorMessage = 'No se encontró cámara en este dispositivo.';
+      } else if (error.name === 'NotReadableError') {
+        errorMessage = 'Cámara en uso por otra aplicación.';
+      }
+      
+      throw new Error(errorMessage);
     }
   };
 
@@ -196,21 +304,24 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
 
   const startProcessingLoop = () => {
     const processFrame = async () => {
-      if (poseRef.current && videoRef.current && videoRef.current.readyState >= 2) {
+      if (poseRef.current && videoRef.current && videoRef.current.readyState >= 2 && !processingRef.current) {
         try {
+          processingRef.current = true;
           await poseRef.current.send({ image: videoRef.current });
           setFrameCount(prev => prev + 1);
         } catch (error) {
           console.warn('⚠️ Error procesando frame:', error);
+        } finally {
+          processingRef.current = false;
         }
       }
 
-      if (isActive) {
+      if (isActive || poseInitialized) {
         animationRef.current = requestAnimationFrame(processFrame);
       }
     };
 
-    processFrame();
+    animationRef.current = requestAnimationFrame(processFrame);
   };
 
   const handlePoseResults = (results) => {
@@ -219,24 +330,21 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
     
     if (!canvas || !video) return;
 
+    const videoRect = video.getBoundingClientRect();
+    canvas.width = video.videoWidth || videoRect.width;
+    canvas.height = video.videoHeight || videoRect.height;
+    
     const ctx = canvas.getContext('2d');
-    
-    // Ajustar tamaño del canvas al video
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    
-    // Limpiar canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (results.poseLandmarks && results.poseLandmarks.length > 0) {
       const landmarks = results.poseLandmarks;
       
-      // Actualizar estados
       setPoseDetected(true);
       setCurrentLandmarks(landmarks);
       setPoseConfidence(calculateConfidence(landmarks));
       
-      // Dibujar el esqueleto
+      // DIBUJAR POSE
       drawPoseLandmarks(ctx, landmarks, canvas.width, canvas.height);
       
     } else {
@@ -267,9 +375,10 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
   // =====================================
 
   const drawPoseLandmarks = (ctx, landmarks, width, height) => {
-    // 1. Dibujar conexiones (esqueleto)
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = '#00ff41';
+    // 1. DIBUJAR ESQUELETO
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#00FF41';
+    ctx.lineCap = 'round';
     
     POSE_CONNECTIONS.forEach(([startIdx, endIdx]) => {
       const start = landmarks[startIdx];
@@ -283,7 +392,7 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
       }
     });
 
-    // 2. Dibujar puntos importantes más grandes
+    // 2. PUNTOS PRINCIPALES
     const importantPoints = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
     
     importantPoints.forEach(index => {
@@ -294,77 +403,87 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
         
         // Círculo principal
         ctx.beginPath();
-        ctx.arc(x, y, 8, 0, 2 * Math.PI);
+        ctx.arc(x, y, 12, 0, 2 * Math.PI);
         ctx.fillStyle = getPointColor(index);
         ctx.fill();
         
-        // Borde blanco
+        // Borde blanco grueso
         ctx.beginPath();
-        ctx.arc(x, y, 8, 0, 2 * Math.PI);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
+        ctx.arc(x, y, 12, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 4;
         ctx.stroke();
         
-        // Punto central más pequeño
+        // Centro blanco
         ctx.beginPath();
-        ctx.arc(x, y, 3, 0, 2 * Math.PI);
-        ctx.fillStyle = '#ffffff';
+        ctx.arc(x, y, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = '#FFFFFF';
         ctx.fill();
       }
     });
 
-    // 3. Dibujar todos los demás puntos más pequeños
+    // 3. PUNTOS MENORES
     landmarks.forEach((landmark, index) => {
       if (!importantPoints.includes(index) && landmark.visibility > 0.3) {
         const x = landmark.x * width;
         const y = landmark.y * height;
         
         ctx.beginPath();
-        ctx.arc(x, y, 4, 0, 2 * Math.PI);
-        ctx.fillStyle = '#ffff00';
+        ctx.arc(x, y, 6, 0, 2 * Math.PI);
+        ctx.fillStyle = '#FFFF00';
         ctx.fill();
+        
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
       }
     });
 
-    // 4. Información en pantalla
+    // 4. INFO OVERLAY
     drawInfoOverlay(ctx, width, height);
   };
 
   const getPointColor = (index) => {
-    // Colores específicos para diferentes partes del cuerpo
-    if (index === 0) return '#ff6b6b'; // Nariz - rojo
-    if ([11, 12].includes(index)) return '#4ecdc4'; // Hombros - cyan
-    if ([13, 14, 15, 16].includes(index)) return '#45b7d1'; // Brazos - azul
-    if ([23, 24].includes(index)) return '#f9ca24'; // Caderas - amarillo
-    if ([25, 26, 27, 28].includes(index)) return '#6c5ce7'; // Piernas - púrpura
-    return '#a0a0a0'; // Otros - gris
+    if (index === 0) return '#FF6B6B'; // Nariz - rojo
+    if ([11, 12].includes(index)) return '#4ECDC4'; // Hombros - cyan
+    if ([13, 14, 15, 16].includes(index)) return '#45B7D1'; // Brazos - azul
+    if ([23, 24].includes(index)) return '#F9CA24'; // Caderas - amarillo
+    if ([25, 26, 27, 28].includes(index)) return '#6C5CE7'; // Piernas - púrpura
+    return '#A0A0A0';
   };
 
   const drawInfoOverlay = (ctx, width, height) => {
-    // Fondo semi-transparente para el texto
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(10, 10, 250, 80);
+    // Fondo para texto
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(15, 15, 320, 120);
     
-    // Texto de información
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 14px Arial';
+    // Texto
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 18px Arial';
     ctx.textAlign = 'left';
     
-    ctx.fillText('🤖 MediaPipe Pose Detection', 20, 30);
-    ctx.fillText(`Puntos detectados: ${currentLandmarks ? currentLandmarks.length : 0}`, 20, 50);
-    ctx.fillText(`Confianza: ${Math.round(poseConfidence)}%`, 20, 70);
+    ctx.fillText('🤖 MediaPipe Pose (CDN)', 25, 45);
+    
+    ctx.font = '16px Arial';
+    ctx.fillText(`Puntos: ${currentLandmarks ? currentLandmarks.length : 0}/33`, 25, 70);
+    ctx.fillText(`Confianza: ${Math.round(poseConfidence)}%`, 25, 95);
+    ctx.fillText(`Frames: ${frameCount}`, 25, 120);
     
     if (poseDetected) {
-      ctx.fillStyle = '#00ff41';
-      ctx.fillText('✅ POSE DETECTADA', 20, 90);
+      ctx.fillStyle = '#00FF41';
+      ctx.font = 'bold 16px Arial';
+      ctx.fillText('✅ POSE DETECTADA', 25, 145);
     } else {
-      ctx.fillStyle = '#ff6b6b';
-      ctx.fillText('❌ Sin detección', 20, 90);
+      ctx.fillStyle = '#FF6B6B';
+      ctx.font = 'bold 16px Arial';
+      ctx.fillText('❌ Buscando pose...', 25, 145);
     }
   };
 
   // =====================================
-  // FUNCIONES DE CONTROL
+  // CONTROL Y LIMPIEZA
   // =====================================
 
   const cleanup = () => {
@@ -375,9 +494,7 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
     }
     
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => {
-        track.stop();
-      });
+      streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
     
@@ -389,7 +506,7 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
       try {
         poseRef.current.close();
       } catch (e) {
-        console.warn('Error cerrando MediaPipe:', e);
+        console.warn('⚠️ Error cerrando MediaPipe:', e);
       }
       poseRef.current = null;
     }
@@ -400,6 +517,7 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
   };
 
   const restartSystem = () => {
+    console.log('🔄 Reiniciando sistema...');
     cleanup();
     setIsActive(false);
     setError(null);
@@ -407,9 +525,10 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
     setPoseDetected(false);
     setCurrentLandmarks(null);
     setFrameCount(0);
+    setPoseConfidence(0);
     
     setTimeout(() => {
-      initializeEverything();
+      loadMediaPipeFromCDN();
     }, 1000);
   };
 
@@ -453,27 +572,16 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
     }
   };
 
-  // =====================================
-  // UTILIDADES
-  // =====================================
-
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const getStatusColor = () => {
-    if (isLoading) return 'yellow';
-    if (error) return 'red';
-    if (isActive && poseInitialized) return 'green';
-    return 'gray';
-  };
-
   const getStatusMessage = () => {
-    if (isLoading) return 'Inicializando sistema...';
+    if (isLoading) return 'Cargando desde CDN...';
     if (error) return `Error: ${error}`;
-    if (isActive && poseInitialized) return 'Sistema listo';
+    if (isActive && poseInitialized) return 'Sistema Listo (CDN)';
     return 'Desactivado';
   };
 
@@ -493,27 +601,25 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
           muted
         />
         
-        {/* Canvas overlay para pose */}
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full pointer-events-none"
           style={{ zIndex: 20 }}
         />
         
-        {/* Overlay de carga */}
+        {/* Overlays */}
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75">
+          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75 z-30">
             <div className="text-center text-white">
               <div className="animate-spin w-12 h-12 border-4 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
-              <h3 className="text-xl font-medium mb-2">Inicializando Sistema</h3>
-              <p className="text-gray-300">Cargando MediaPipe + Cámara...</p>
+              <h3 className="text-xl font-medium mb-2">Cargando MediaPipe desde CDN</h3>
+              <p className="text-gray-300">Descargando librerías desde jsdelivr...</p>
             </div>
           </div>
         )}
 
-        {/* Overlay de error */}
         {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-red-900 bg-opacity-90">
+          <div className="absolute inset-0 flex items-center justify-center bg-red-900 bg-opacity-90 z-30">
             <div className="text-center text-white max-w-md mx-auto px-4">
               <Camera size={64} className="mx-auto mb-4 opacity-75" />
               <h3 className="text-xl font-medium mb-3">Error del Sistema</h3>
@@ -529,39 +635,31 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
           </div>
         )}
 
-        {/* Indicadores cuando está activa */}
+        {/* Indicadores */}
         {isActive && !error && (
           <>
-            {/* Indicador de grabación */}
             {isRecording && (
-              <div className="absolute top-4 left-4 flex items-center space-x-2">
+              <div className="absolute top-4 left-4 flex items-center space-x-2 z-25">
                 <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
-                <span className="text-white font-bold bg-red-600 bg-opacity-80 px-3 py-1 rounded-full">
+                <span className="text-white font-bold bg-red-600 bg-opacity-90 px-3 py-1 rounded-full">
                   🔴 REC {formatTime(sessionTime)}
                 </span>
               </div>
             )}
 
-            {/* Estado del sistema */}
-            <div className={`absolute top-4 right-4 px-3 py-1 rounded-full text-sm font-medium ${
-              getStatusColor() === 'green' ? 'bg-green-600 bg-opacity-80 text-white' :
-              getStatusColor() === 'yellow' ? 'bg-yellow-600 bg-opacity-80 text-white' :
-              'bg-red-600 bg-opacity-80 text-white'
-            }`}>
+            <div className="absolute top-4 right-4 px-3 py-1 rounded-full text-sm font-medium z-25 bg-green-600 bg-opacity-90 text-white">
               {getStatusMessage()}
             </div>
 
-            {/* Contador de frames */}
-            <div className="absolute bottom-4 right-4 bg-black bg-opacity-60 text-white px-3 py-1 rounded-lg text-sm">
+            <div className="absolute bottom-4 right-4 bg-black bg-opacity-80 text-white px-3 py-1 rounded-lg text-sm z-25">
               Frames: {frameCount}
             </div>
 
-            {/* Indicador de detección */}
             {poseDetected && (
-              <div className="absolute bottom-4 left-4 bg-green-600 bg-opacity-90 text-white px-3 py-1 rounded-lg text-sm">
+              <div className="absolute bottom-4 left-4 bg-green-600 bg-opacity-90 text-white px-3 py-1 rounded-lg text-sm z-25">
                 <div className="flex items-center space-x-2">
                   <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                  <span>🤖 Pose Detectada ({Math.round(poseConfidence)}%)</span>
+                  <span>🤖 Pose: {Math.round(poseConfidence)}%</span>
                 </div>
               </div>
             )}
@@ -569,16 +667,15 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
         )}
       </div>
 
-      {/* Panel de controles */}
+      {/* Controles */}
       <div className="p-4 bg-gray-50">
-        {/* Controles principales */}
         <div className="flex items-center justify-center space-x-4">
           {isActive && !error ? (
             <>
               <button
                 onClick={isRecording ? stopRecording : startRecording}
                 disabled={!poseInitialized}
-                className={`flex items-center space-x-2 px-6 py-3 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed ${
+                className={`flex items-center space-x-2 px-6 py-3 text-white rounded-lg transition-colors font-medium disabled:opacity-50 ${
                   isRecording
                     ? 'bg-red-600 hover:bg-red-700'
                     : 'bg-green-600 hover:bg-green-700'
@@ -603,21 +700,21 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
               className="flex items-center space-x-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors font-medium disabled:cursor-not-allowed"
             >
               <Camera size={20} />
-              <span>{isLoading ? 'Inicializando...' : 'Activar Sistema'}</span>
+              <span>{isLoading ? 'Cargando CDN...' : 'Activar Sistema'}</span>
             </button>
           )}
         </div>
 
-        {/* Información de estado */}
+        {/* Estado */}
         <div className="mt-4 text-center text-sm">
           {isActive && poseInitialized && !error && (
             <div className="space-y-2">
               <span className="text-green-600 font-medium">
-                ✅ Sistema MediaPipe funcionando
+                ✅ MediaPipe CDN funcionando
                 {isRecording && ` • Grabando: ${formatTime(sessionTime)}`}
               </span>
               
-              <div className="grid grid-cols-3 gap-4 text-xs">
+              <div className="grid grid-cols-4 gap-4 text-xs">
                 <div className="bg-white rounded p-2 border">
                   <div className="font-bold text-sm">{frameCount}</div>
                   <div className="text-gray-600">Frames</div>
@@ -634,12 +731,18 @@ const CameraWithPosePoints = ({ onSessionData, exerciseType = 'general' }) => {
                   </div>
                   <div className="text-gray-600">Confianza</div>
                 </div>
+                <div className="bg-white rounded p-2 border">
+                  <div className="font-bold text-sm text-purple-600">
+                    {currentLandmarks ? currentLandmarks.length : 0}/33
+                  </div>
+                  <div className="text-gray-600">Puntos</div>
+                </div>
               </div>
             </div>
           )}
           {error && (
             <span className="text-red-600">
-              ❌ Error del sistema - Reinicia para continuar
+              ❌ Error - Reinicia para continuar
             </span>
           )}
         </div>
