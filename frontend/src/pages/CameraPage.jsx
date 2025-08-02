@@ -1,12 +1,11 @@
 /**
- * GymForm Analyzer - Camera Page con Interfaz Compacta
- * Diseño optimizado para mostrar todo sin scroll
+ * GymForm Analyzer - Camera Page con Puntos de Pose Visibles
  */
 
 import { useState } from 'react';
 import { Activity, Target, BarChart3, Camera, Zap, Brain, TrendingUp } from 'lucide-react';
 import toast from 'react-hot-toast';
-import EnhancedAutoCamera from '../components/camera/EnhancedAutoCamera';
+import CameraWithPosePoints from '../components/camera/CameraWithPosePoints';
 
 const CameraPage = () => {
   const [selectedExercise, setSelectedExercise] = useState('general');
@@ -46,11 +45,11 @@ const CameraPage = () => {
   ];
 
   // =====================================
-  // MANEJO DE SESIONES CON IA
+  // MANEJO DE SESIONES
   // =====================================
 
   const handleSessionData = (sessionData) => {
-    console.log('📊 Evento de sesión con IA:', sessionData);
+    console.log('📊 Evento de sesión:', sessionData);
 
     if (sessionData.action === 'start') {
       const newSession = {
@@ -63,7 +62,7 @@ const CameraPage = () => {
       setCurrentSession(newSession);
       
       const exerciseName = exercises.find(e => e.id === selectedExercise)?.name || selectedExercise;
-      toast.success(`🤖 Análisis de IA iniciado para ${exerciseName}`);
+      toast.success(`🤖 Análisis de puntos iniciado para ${exerciseName}`);
     }
 
     if (sessionData.action === 'stop') {
@@ -72,27 +71,19 @@ const CameraPage = () => {
           ...currentSession,
           endTime: sessionData.timestamp,
           duration: sessionData.duration,
-          finalScore: sessionData.finalScore || 0,
-          accuracy: sessionData.accuracy || 0,
-          totalFrames: sessionData.totalFrames || 0,
-          goodFrames: sessionData.goodFrames || 0,
-          lastAngles: sessionData.lastAngles || null,
+          frameCount: sessionData.frameCount || 0,
+          poseDetected: sessionData.poseDetected || false,
           createdAt: new Date().toISOString(),
-          isActive: false,
-          isAiAnalyzed: true
+          isActive: false
         };
 
-        setSessionHistory(prev => [completedSession, ...prev.slice(0, 4)]); // Solo mantener las últimas 5
+        setSessionHistory(prev => [completedSession, ...prev.slice(0, 9)]); // Solo mantener las últimas 10
         setCurrentSession(null);
         
-        if (completedSession.finalScore > 0) {
-          toast.success(
-            `🎯 ¡Análisis completado! Puntuación: ${Math.round(completedSession.finalScore)}/100 | ` +
-            `Precisión: ${Math.round(completedSession.accuracy)}%`
-          );
-        } else {
-          toast.success(`✅ Sesión guardada - Duración: ${formatDuration(completedSession.duration)}`);
-        }
+        toast.success(
+          `✅ Sesión completada - Duración: ${formatDuration(completedSession.duration)} | ` +
+          `Frames: ${completedSession.frameCount}`
+        );
       }
     }
   };
@@ -107,50 +98,36 @@ const CameraPage = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const getScoreColor = (score) => {
-    if (score >= 90) return 'text-green-600';
-    if (score >= 80) return 'text-blue-600';
-    if (score >= 70) return 'text-yellow-600';
-    return 'text-red-600';
-  };
-
-  const getScoreBadge = (score) => {
-    if (score >= 90) return 'bg-green-100 text-green-800 border-green-300';
-    if (score >= 80) return 'bg-blue-100 text-blue-800 border-blue-300';
-    if (score >= 70) return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-    return 'bg-red-100 text-red-800 border-red-300';
-  };
-
   const getSessionStats = () => {
     if (sessionHistory.length === 0) return null;
     
-    const avgScore = sessionHistory.reduce((sum, session) => sum + (session.finalScore || 0), 0) / sessionHistory.length;
     const totalDuration = sessionHistory.reduce((sum, session) => sum + session.duration, 0);
-    const bestScore = Math.max(...sessionHistory.map(s => s.finalScore || 0));
-    const aiSessions = sessionHistory.filter(s => s.isAiAnalyzed).length;
+    const totalFrames = sessionHistory.reduce((sum, session) => sum + (session.frameCount || 0), 0);
+    const successfulDetections = sessionHistory.filter(s => s.poseDetected).length;
+    const avgDuration = totalDuration / sessionHistory.length;
     
-    return { avgScore, totalDuration, bestScore, aiSessions };
+    return { totalDuration, totalFrames, successfulDetections, avgDuration };
   };
 
   const stats = getSessionStats();
 
   // =====================================
-  // RENDER COMPACTO
+  // RENDER
   // =====================================
 
   return (
     <div className="min-h-screen bg-gray-50 py-4">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Header Compacto */}
+        {/* Header */}
         <div className="text-center mb-4">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            🤖 Análisis de Técnica con IA
+            🤖 Detección de Puntos de Pose MediaPipe
           </h1>
           <div className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg shadow-sm">
-            <Brain className="w-4 h-4 text-green-600 mr-2" />
+            <Zap className="w-4 h-4 text-green-600 mr-2" />
             <span className="text-sm text-green-800 font-medium">
-              Sistema MediaPipe activado
+              Puntos de pose visibles en tiempo real
             </span>
           </div>
         </div>
@@ -161,7 +138,7 @@ const CameraPage = () => {
           {/* Columna Izquierda - Cámara y Controles (2/3) */}
           <div className="lg:col-span-2 space-y-4">
             
-            {/* Selector de Ejercicio Compacto */}
+            {/* Selector de Ejercicio */}
             <div className="bg-white rounded-lg shadow-sm border p-4">
               <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
                 <Target className="mr-2" size={20} />
@@ -186,7 +163,7 @@ const CameraPage = () => {
                     {selectedExercise === exercise.id && (
                       <div className="flex items-center justify-center text-blue-600 font-medium text-xs mt-1">
                         <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mr-1"></div>
-                        IA Activa
+                        Seleccionado
                       </div>
                     )}
                   </button>
@@ -196,42 +173,86 @@ const CameraPage = () => {
               {currentSession?.isActive && (
                 <div className="mt-3 flex items-center justify-center text-amber-700 bg-amber-50 rounded-lg p-2">
                   <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse mr-2"></div>
-                  <span className="font-medium text-sm">🤖 Análisis de IA activo</span>
+                  <span className="font-medium text-sm">🎥 Análisis activo</span>
                 </div>
               )}
             </div>
 
-            {/* Cámara Compacta */}
+            {/* Cámara con Puntos de Pose */}
             <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
               <div className="flex items-center justify-between p-3 border-b bg-gradient-to-r from-gray-50 to-gray-100">
                 <h2 className="text-lg font-semibold text-gray-900 flex items-center">
                   <Activity className="mr-2" size={20} />
                   {exercises.find(e => e.id === selectedExercise)?.name}
                   <span className="ml-2 text-xl">{exercises.find(e => e.id === selectedExercise)?.emoji}</span>
-                  <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">MediaPipe</span>
+                  <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">MediaPipe</span>
                 </h2>
                 
                 {currentSession?.isActive && (
                   <div className="flex items-center space-x-2 bg-red-50 px-3 py-1 rounded-full border border-red-200">
                     <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                    <span className="text-red-700 font-semibold text-sm">🤖 IA Analizando</span>
+                    <span className="text-red-700 font-semibold text-sm">🎥 Grabando</span>
                   </div>
                 )}
               </div>
               
-              {/* Cámara más pequeña */}
+              {/* Cámara con puntos de pose */}
               <div className="p-3">
-                <div className="max-w-2xl mx-auto">
-                  <EnhancedAutoCamera 
-                    onSessionData={handleSessionData} 
-                    exerciseType={selectedExercise}
-                  />
+                <CameraWithPosePoints 
+                  onSessionData={handleSessionData} 
+                  exerciseType={selectedExercise}
+                />
+              </div>
+            </div>
+
+            {/* Información sobre los puntos */}
+            <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="text-lg font-semibold text-blue-900 mb-3 flex items-center">
+                <Zap className="mr-2" size={20} />
+                Puntos de Pose MediaPipe
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <h4 className="font-medium mb-2 text-blue-800">🎯 Puntos Principales:</h4>
+                  <ul className="space-y-1 text-blue-700">
+                    <li className="flex items-center">
+                      <div className="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+                      Nariz (rojo)
+                    </li>
+                    <li className="flex items-center">
+                      <div className="w-3 h-3 bg-teal-500 rounded-full mr-2"></div>
+                      Hombros (cyan)
+                    </li>
+                    <li className="flex items-center">
+                      <div className="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
+                      Brazos (azul)
+                    </li>
+                    <li className="flex items-center">
+                      <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
+                      Caderas (amarillo)
+                    </li>
+                    <li className="flex items-center">
+                      <div className="w-3 h-3 bg-purple-500 rounded-full mr-2"></div>
+                      Piernas (púrpura)
+                    </li>
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="font-medium mb-2 text-blue-800">📊 Información:</h4>
+                  <ul className="space-y-1 text-blue-700">
+                    <li>• Total de 33 puntos detectables</li>
+                    <li>• Conexiones de esqueleto en verde</li>
+                    <li>• Confianza en tiempo real</li>
+                    <li>• Detección automática de pose</li>
+                    <li>• Optimizado para ejercicios</li>
+                  </ul>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Columna Derecha - Estadísticas y Historial (1/3) */}
+          {/* Columna Derecha - Estadísticas e Historial (1/3) */}
           <div className="space-y-4">
             
             {/* Métricas en Tiempo Real */}
@@ -245,10 +266,10 @@ const CameraPage = () => {
                 <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
                   <div className="flex items-center">
                     <Brain className="text-blue-600 mr-2" size={16} />
-                    <span className="font-medium text-sm">IA Estado</span>
+                    <span className="font-medium text-sm">MediaPipe</span>
                   </div>
                   <span className="text-sm font-bold">
-                    {currentSession?.isActive ? '🤖 Activa' : '⏸️ Standby'}
+                    {currentSession?.isActive ? '🤖 Activo' : '⏸️ Standby'}
                   </span>
                 </div>
 
@@ -265,10 +286,10 @@ const CameraPage = () => {
                 <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
                   <div className="flex items-center">
                     <BarChart3 className="text-purple-600 mr-2" size={16} />
-                    <span className="font-medium text-sm">Sesiones IA</span>
+                    <span className="font-medium text-sm">Sesiones</span>
                   </div>
                   <span className="text-sm font-bold">
-                    {stats?.aiSessions || 0} / {sessionHistory.length}
+                    {sessionHistory.length}
                   </span>
                 </div>
 
@@ -276,25 +297,25 @@ const CameraPage = () => {
                   <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
                     <div className="flex items-center">
                       <Camera className="text-yellow-600 mr-2" size={16} />
-                      <span className="font-medium text-sm">Promedio</span>
+                      <span className="font-medium text-sm">Total Frames</span>
                     </div>
-                    <span className="text-sm font-bold">{Math.round(stats.avgScore)}/100</span>
+                    <span className="text-sm font-bold">{stats.totalFrames}</span>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Historial Compacto */}
+            {/* Historial de Sesiones */}
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4 border-b bg-gradient-to-r from-gray-50 to-gray-100">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-gray-900 flex items-center">
                     <BarChart3 className="mr-2" size={20} />
-                    Historial IA
+                    Historial
                   </h3>
                   {stats && (
                     <div className="text-xs text-gray-600">
-                      Mejor: <span className="font-semibold text-green-600">{Math.round(stats.bestScore)}/100</span>
+                      Detecciones: <span className="font-semibold text-green-600">{stats.successfulDetections}/{sessionHistory.length}</span>
                     </div>
                   )}
                 </div>
@@ -303,21 +324,19 @@ const CameraPage = () => {
               <div className="p-4 max-h-96 overflow-y-auto">
                 {sessionHistory.length > 0 ? (
                   <div className="space-y-3">
-                    {sessionHistory.slice(0, 5).map((session, index) => (
+                    {sessionHistory.slice(0, 8).map((session, index) => (
                       <div key={session.id} className="border rounded-lg p-3 hover:bg-gray-50 transition-colors">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center space-x-2">
-                            {session.isAiAnalyzed && (
-                              <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-xs font-medium">
-                                🤖
+                            <span className="text-lg">{exercises.find(e => e.id === session.exerciseType)?.emoji}</span>
+                            <span className="font-medium text-sm">{exercises.find(e => e.id === session.exerciseType)?.name}</span>
+                            {session.poseDetected && (
+                              <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded text-xs font-medium">
+                                ✅ Detectado
                               </span>
                             )}
-                            <span className={`px-2 py-1 rounded text-xs font-semibold ${getScoreBadge(session.finalScore || 0)}`}>
-                              {Math.round(session.finalScore || 0)}
-                            </span>
-                            <span className="text-lg">{exercises.find(e => e.id === session.exerciseType)?.emoji}</span>
                             {index === 0 && (
-                              <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded text-xs font-medium">
+                              <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-xs font-medium">
                                 Nuevo
                               </span>
                             )}
@@ -335,97 +354,52 @@ const CameraPage = () => {
                         
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           <div className="flex justify-between bg-gray-50 rounded p-2">
-                            <span className="text-gray-600">Precisión:</span>
-                            <span className="font-bold">{Math.round(session.accuracy || 0)}%</span>
-                          </div>
-                          <div className="flex justify-between bg-gray-50 rounded p-2">
-                            <span className="text-gray-600">Tiempo:</span>
+                            <span className="text-gray-600">Duración:</span>
                             <span className="font-bold">{formatDuration(session.duration)}</span>
                           </div>
-                        </div>
-
-                        {/* Mostrar ángulos si están disponibles */}
-                        {session.lastAngles && (
-                          <div className="mt-2 pt-2 border-t">
-                            <details className="cursor-pointer">
-                              <summary className="text-xs font-medium text-gray-600 hover:text-gray-800">
-                                📐 Ángulos IA
-                              </summary>
-                              <div className="mt-1 grid grid-cols-2 gap-1 text-xs">
-                                {Object.entries(session.lastAngles).slice(0, 4).map(([joint, angle]) => (
-                                  angle && (
-                                    <div key={joint} className="bg-blue-50 rounded p-1">
-                                      <span className="text-gray-600">{joint}:</span>
-                                      <span className="font-medium ml-1">{angle}°</span>
-                                    </div>
-                                  )
-                                ))}
-                              </div>
-                            </details>
+                          <div className="flex justify-between bg-gray-50 rounded p-2">
+                            <span className="text-gray-600">Frames:</span>
+                            <span className="font-bold">{session.frameCount || 0}</span>
                           </div>
-                        )}
+                        </div>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-gray-500">
-                    <div className="text-4xl mb-3">🤖</div>
-                    <p className="text-sm font-medium mb-1">No hay sesiones IA</p>
-                    <p className="text-xs">Inicia una sesión para ver análisis</p>
+                    <div className="text-4xl mb-3">🎥</div>
+                    <p className="text-sm font-medium mb-1">No hay sesiones</p>
+                    <p className="text-xs">Inicia una sesión para ver el historial</p>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Info del Sistema Compacta */}
-            <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border border-blue-200 rounded-lg p-4">
-              <h4 className="text-sm font-bold text-blue-900 mb-3 flex items-center">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></div>
-                Sistema MediaPipe
-              </h4>
+            {/* Guía de Colores */}
+            <div className="bg-white rounded-lg shadow-sm border p-4">
+              <h4 className="text-sm font-bold text-gray-900 mb-3">🎨 Guía de Colores</h4>
               
               <div className="space-y-2 text-xs">
-                <div className="flex items-center text-green-700">
-                  <span className="text-green-500 mr-2">✅</span>
-                  Detección de pose en tiempo real
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+                    <span>Esqueleto</span>
+                  </div>
+                  <span className="text-gray-600">Conexiones</span>
                 </div>
-                <div className="flex items-center text-green-700">
-                  <span className="text-green-500 mr-2">✅</span>
-                  Cálculo automático de ángulos
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
+                    <span>Puntos menores</span>
+                  </div>
+                  <span className="text-gray-600">Landmarks</span>
                 </div>
-                <div className="flex items-center text-green-700">
-                  <span className="text-green-500 mr-2">✅</span>
-                  Análisis específico por ejercicio
-                </div>
-                <div className="flex items-center text-green-700">
-                  <span className="text-green-500 mr-2">✅</span>
-                  Feedback visual en tiempo real
-                </div>
-              </div>
-              
-              <div className="mt-3 bg-white rounded-lg p-2 border border-blue-200">
-                <div className="text-xs text-blue-900 font-medium mb-1">🎯 Proceso de IA:</div>
-                <div className="grid grid-cols-5 gap-1 text-xs">
-                  <div className="text-center p-1 bg-blue-50 rounded">
-                    <div className="text-lg">1️⃣</div>
-                    <div className="font-medium">Detecta</div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 bg-white border-2 border-gray-400 rounded-full mr-2"></div>
+                    <span>Centro blanco</span>
                   </div>
-                  <div className="text-center p-1 bg-blue-50 rounded">
-                    <div className="text-lg">2️⃣</div>
-                    <div className="font-medium">Calcula</div>
-                  </div>
-                  <div className="text-center p-1 bg-blue-50 rounded">
-                    <div className="text-lg">3️⃣</div>
-                    <div className="font-medium">Analiza</div>
-                  </div>
-                  <div className="text-center p-1 bg-blue-50 rounded">
-                    <div className="text-lg">4️⃣</div>
-                    <div className="font-medium">Puntúa</div>
-                  </div>
-                  <div className="text-center p-1 bg-blue-50 rounded">
-                    <div className="text-lg">5️⃣</div>
-                    <div className="font-medium">Muestra</div>
-                  </div>
+                  <span className="text-gray-600">Precisión</span>
                 </div>
               </div>
             </div>

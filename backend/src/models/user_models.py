@@ -1,5 +1,5 @@
 """
-Modelos Pydantic para usuarios
+Modelos Pydantic para usuarios - Versión corregida para Pydantic v2
 """
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
@@ -13,7 +13,7 @@ class UserCreate(BaseModel):
     last_name: Optional[str] = Field(None, max_length=50)
     height: Optional[float] = Field(None, ge=100, le=250)  # cm
     weight: Optional[float] = Field(None, ge=30, le=300)   # kg
-    fitness_level: Optional[str] = Field("beginner", regex="^(beginner|intermediate|advanced)$")
+    fitness_level: Optional[str] = Field("beginner", pattern="^(beginner|intermediate|advanced)$")
 
 class UserLogin(BaseModel):
     username: str
